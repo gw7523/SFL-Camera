@@ -3,7 +3,7 @@
 -- Purpose: Provide functions to define camera modes relative to an aircraft using quaternions.
 -- Author: The Strike Fighter League, LLC
 -- Date: 03 February 2025
--- Version: 1.11
+-- Version: 1.12
 -- Dependencies: Quaternion.lua (must be loaded first by SFL-Camera.lua)
 
 --[[
@@ -16,15 +16,14 @@
       - Quaternion: {w = scalar, x = i, y = j, z = k}
     - Logging: Errors always logged; Info logged if enableLogging is true.
 
-    Changes in Version 1.11 (03 February 2025):
+    Changes in Version 1.12 (03 February 2025):
     - Corrected camera orientation:
-      - Fixed z-axis (backward) to point from camera to aircraft (aircraft_pos - camera_pos), ensuring the camera looks at the aircraft.
-      - Previously pointed from aircraft to camera, causing it to look away.
-      - Aligned y-axis (up) with aircraft's up vector using corrected orthonormal basis computation.
+      - Adjusted computation of camera's up vector to align more closely with aircraft's up vector.
+      - Used projection to ensure camera's up vector is perpendicular to the look direction.
     - Enhanced logging:
-      - Logs camera x, y, z basis vectors, aircraft-to-camera vector, camera-to-aircraft vector, and magnitude.
-      - Verifies camera_z aligns with normalized camera-to-aircraft vector and camera_y matches aircraft up vector.
-    - Updated version to 1.11.
+      - Added mission time stamp using LoGetModelTime().
+      - Logged camera's up vector and aircraft's up vector for comparison.
+    - Updated version to 1.12.
 ]]
 
 -- Dependency Check
@@ -58,8 +57,23 @@ local function magnitude(v)
     return math.sqrt(v.x^2 + v.y^2 + v.z^2)
 end
 
+-- Local helper function to project vector u onto plane perpendicular to n
+local function projectOntoPlane(u, n)
+    local dot_un = u.x * n.x + u.y * n.y + u.z * n.z
+    return {
+        x = u.x - dot_un * n.x,
+        y = u.y - dot_un * n.y,
+        z = u.z - dot_un * n.z
+    }
+end
+
 -- Welded Wing Camera: Fixed position relative to aircraft, oriented to look at aircraft origin with up vector aligned to aircraft's up
 function setWeldedWingCamera(identifier, offset_local)
+    local mission_time = LoGetModelTime()
+    if enableLogging then
+        log.write("CameraModes", log.INFO, "setWeldedWingCamera called at mission time: " .. tostring(mission_time))
+    end
+
     local aircraft_data = getAircraftData(identifier)
     if not aircraft_data then
         log.write("CameraModes", log.ERROR, "Aircraft not found: " .. identifier)
@@ -107,13 +121,13 @@ function setWeldedWingCamera(identifier, offset_local)
     }
     local camera_z = normalize(d) -- z-axis points from camera to aircraft
 
-    -- Compute camera x-axis (right vector) as perpendicular to z and aircraft's up
-    local camera_x = cross(aircraft_up_global_vec, camera_z)
-    camera_x = normalize(camera_x)
+    -- Project aircraft's up vector onto the plane perpendicular to camera_z
+    local projected_up = projectOntoPlane(aircraft_up_global_vec, camera_z)
+    local camera_y = normalize(projected_up) -- y-axis aligned with projected aircraft up
 
-    -- Compute camera y-axis (up vector) to ensure orthogonality and alignment with aircraft up
-    local camera_y = cross(camera_z, camera_x)
-    camera_y = normalize(camera_y)
+    -- Compute camera x-axis (right vector) as cross product of camera_y and camera_z
+    local camera_x = cross(camera_y, camera_z)
+    camera_x = normalize(camera_x)
 
     local camera_basis = {x = camera_x, y = camera_y, z = camera_z}
 
@@ -139,6 +153,8 @@ function setWeldedWingCamera(identifier, offset_local)
         log.write("CameraModes", log.INFO, "setWeldedWingCamera: Aircraft-to-Camera Vector: (" .. aircraft_to_camera.x .. "," .. aircraft_to_camera.y .. "," .. aircraft_to_camera.z .. ")")
         log.write("CameraModes", log.INFO, "setWeldedWingCamera: Camera-to-Aircraft Vector: (" .. camera_to_aircraft.x .. "," .. camera_to_aircraft.y .. "," .. camera_to_aircraft.z .. ")")
         log.write("CameraModes", log.INFO, "setWeldedWingCamera: Magnitude of Aircraft-to-Camera Vector: " .. magnitude_atc)
+        log.write("CameraModes", log.INFO, "setWeldedWingCamera: Camera Up Vector: (" .. camera_basis.y.x .. "," .. camera_basis.y.y .. "," .. camera_basis.y.z .. ")")
+        log.write("CameraModes", log.INFO, "setWeldedWingCamera: Aircraft Up Vector: (" .. aircraft_up_global_vec.x .. "," .. aircraft_up_global_vec.y .. "," .. aircraft_up_global_vec.z .. ")")
     end
 
     return {p = camera_pos, x = camera_basis.x, y = camera_basis.y, z = camera_basis.z}
@@ -219,5 +235,5 @@ function setRotatingCinematicCamera(identifier, a, b, c, theta0, phi0, dtheta_dt
 end
 
 if enableLogging then
-    log.write("CameraModes", log.INFO, "CameraModes.lua (v1.11) loaded successfully.")
+    log.write("CameraModes", log.INFO, "CameraModes.lua (v1.12) loaded successfully.")
 end
