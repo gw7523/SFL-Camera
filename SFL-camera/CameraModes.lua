@@ -3,7 +3,7 @@
 -- Purpose: Provide functions to define camera modes relative to an aircraft using quaternions.
 -- Author: The Strike Fighter League, LLC
 -- Date: 03 February 2025
--- Version: 1.8
+-- Version: 1.9
 -- Dependencies: Quaternion.lua (must be loaded first by SFL-Camera.lua)
 
 --[[
@@ -16,14 +16,14 @@
       - Quaternion: {w = scalar, x = i, y = j, z = k}
     - Logging: Errors always logged; Info logged if enableLogging is true.
 
-    Changes in Version 1.8 (03 February 2025):
-    - Fixed camera position by permuting offset_local to {y, x, -z} before transformation, correcting for DCS coordinate system mismatch.
-      - Ensures offset {x=20, y=5, z=2} (20m forward, 5m right, 2m down) positions camera correctly relative to aircraft.
-    - Fixed camera orientation in setWeldedWingCamera:
-      - Replaced global up vector {0,0,1} with aircraft's up vector in global frame (q_aircraft * {0,0,-1} * q_aircraft^-1).
-      - Ensures camera's y-axis (up) aligns with aircraft's up vector, maintaining fixed orientation relative to aircraft's local frame.
-    - Added logging for permuted offset and aircraft's global up vector to verify transformations.
-    - Updated version to 1.8.
+    Changes in Version 1.9 (03 February 2025):
+    - Corrected camera position by directly using offset_local {x=forward, y=right, z=down} without permutation.
+      - Ensures camera is positioned correctly relative to the aircraft's local frame (20m forward, 5m right, 2m below).
+    - Enhanced camera orientation:
+      - Camera z-axis (backward) points directly at the aircraft.
+      - Camera y-axis (up) aligns with the aircraft's up vector in the global frame.
+    - Retained detailed logging for position, offset, and basis vectors to aid debugging.
+    - Updated version to 1.9.
 ]]
 
 -- Dependency Check
@@ -45,24 +45,11 @@ local function cross(u, v)
     }
 end
 
--- Local helper function to convert quaternion to basis vectors (retained for other modes)
-local function quatToBasis(q)
-    local xVec = {
-        x = 1 - 2 * (q.y * q.y + q.z * q.z),
-        y = 2 * (q.x * q.y + q.w * q.z),
-        z = 2 * (q.x * q.z - q.w * q.y)
-    }
-    local yVec = {
-        x = 2 * (q.x * q.y - q.w * q.z),
-        y = 1 - 2 * (q.x * q.x + q.z * q.z),
-        z = 2 * (q.y * q.z + q.w * q.x)
-    }
-    local zVec = {
-        x = 2 * (q.x * q.z + q.w * q.y),
-        y = 2 * (q.y * q.z - q.w * q.x),
-        z = 1 - 2 * (q.x * q.x + q.y * q.y)
-    }
-    return {x = xVec, y = yVec, z = zVec}
+-- Local helper function to normalize a vector
+local function normalize(v)
+    local len = math.sqrt(v.x^2 + v.y^2 + v.z^2)
+    if len < 1e-6 then return {x=0, y=0, z=0} end -- Avoid division by zero
+    return {x = v.x / len, y = v.y / len, z = v.z / len}
 end
 
 -- Welded Wing Camera: Fixed position relative to aircraft, oriented to look at aircraft origin with up vector aligned to aircraft's up
@@ -81,15 +68,8 @@ function setWeldedWingCamera(identifier, offset_local)
                   ", y=" .. offset_local.y .. ", z=" .. offset_local.z)
     end
 
-    -- Permute offset_local to match DCS coordinate system (x=forward->y_global, y=right->x_global, z=down->-z_global)
-    local offset_perm = {x = offset_local.y, y = offset_local.x, z = -offset_local.z}
-    if enableLogging then
-        log.write("CameraModes", log.INFO, "setWeldedWingCamera: Permuted Offset: x=" .. offset_perm.x .. 
-                  ", y=" .. offset_perm.y .. ", z=" .. offset_perm.z)
-    end
-
-    -- Transform permuted offset from local to global frame
-    local offset_quat = {w = 0, x = offset_perm.x, y = offset_perm.y, z = offset_perm.z}
+    -- Transform offset from local to global frame
+    local offset_quat = {w = 0, x = offset_local.x, y = offset_local.y, z = offset_local.z}
     local offset_global = quatMultiply(quatMultiply(q_aircraft, offset_quat), quatConjugate(q_aircraft))
     local offset_global_vec = {x = offset_global.x, y = offset_global.y, z = offset_global.z}
     if enableLogging then
@@ -104,33 +84,30 @@ function setWeldedWingCamera(identifier, offset_local)
         z = aircraft_pos.z + offset_global_vec.z
     }
 
-    -- Compute aircraft's up vector in global frame (local up is -z)
+    -- Compute aircraft's up vector in global frame (local up is -z, since aircraft z is down)
     local up_local_quat = {w = 0, x = 0, y = 0, z = -1}
     local aircraft_up_global = quatMultiply(quatMultiply(q_aircraft, up_local_quat), quatConjugate(q_aircraft))
-    local aircraft_up_global_vec = {x = aircraft_up_global.x, y = aircraft_up_global.y, z = aircraft_up_global.z}
+    local aircraft_up_global_vec = normalize({x = aircraft_up_global.x, y = aircraft_up_global.y, z = aircraft_up_global.z})
     if enableLogging then
         log.write("CameraModes", log.INFO, "setWeldedWingCamera: Aircraft Up Global: x=" .. aircraft_up_global_vec.x .. 
                   ", y=" .. aircraft_up_global_vec.y .. ", z=" .. aircraft_up_global_vec.z)
     end
 
-    -- Compute camera orientation: z-axis towards aircraft, y-axis aligned with aircraft's up
+    -- Compute direction from camera to aircraft (camera z-axis, backward)
     local d = {
         x = aircraft_pos.x - camera_pos.x,
         y = aircraft_pos.y - camera_pos.y,
         z = aircraft_pos.z - camera_pos.z
     }
-    local len = math.sqrt(d.x^2 + d.y^2 + d.z^2)
-    if len < 1e-6 then len = 1e-6 end -- Prevent division by zero
-    local camera_z = {x = d.x / len, y = d.y / len, z = d.z / len} -- z-axis points to aircraft
+    local camera_z = normalize(d) -- z-axis points towards aircraft
 
+    -- Compute camera x-axis (right vector) as perpendicular to z and aircraft's up
     local camera_x = cross(aircraft_up_global_vec, camera_z)
-    len = math.sqrt(camera_x.x^2 + camera_x.y^2 + camera_x.z^2)
-    if len > 1e-6 then
-        camera_x = {x = camera_x.x / len, y = camera_x.y / len, z = camera_x.z / len}
-    else
-        camera_x = {x = 1, y = 0, z = 0} -- Fallback if parallel
-    end
-    local camera_y = cross(camera_z, camera_x) -- y-axis aligned with aircraft up, orthogonal to z
+    camera_x = normalize(camera_x)
+
+    -- Compute camera y-axis (up vector) to ensure orthogonality
+    local camera_y = cross(camera_z, camera_x)
+    camera_y = normalize(camera_y)
 
     local camera_basis = {x = camera_x, y = camera_y, z = camera_z}
 
@@ -220,5 +197,5 @@ function setRotatingCinematicCamera(identifier, a, b, c, theta0, phi0, dtheta_dt
 end
 
 if enableLogging then
-    log.write("CameraModes", log.INFO, "CameraModes.lua (v1.8) loaded successfully.")
+    log.write("CameraModes", log.INFO, "CameraModes.lua (v1.9) loaded successfully.")
 end
