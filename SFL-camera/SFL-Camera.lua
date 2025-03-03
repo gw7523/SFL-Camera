@@ -3,7 +3,7 @@
 -- Purpose: Central script to load dependencies, apply camera configurations, and update camera position in DCS Export.lua environment.
 -- Author: The Strike Fighter League, LLC
 -- Date: 03 February 2025
--- Version: 1.9
+-- Version: 2.0
 -- Dependencies: Quaternion.lua, Camera-cfg.lua, CameraModes.lua
 
 --[[
@@ -12,12 +12,11 @@
     - Applies camera configurations and updates position via export hooks.
     - Update modes: "frame" (every frame) or "interval" (time-based).
 
-    Changes in Version 1.9:
-    - Ensured Quaternion.lua loads before CameraModes.lua to resolve function access issues.
-    - Added explicit check for setWeldedWingCamera after loading CameraModes.lua.
-    - Enhanced updateCamera with detailed logging and nil checks.
-    - Updated export hooks to prevent LuaExportActivityNextEvent errors and ensure continuous updates.
-    - Updated date to 03 February 2025.
+    Changes in Version 2.0 (03 February 2025):
+    - Added compact track log: Implemented `TrackLog.bin` in binary format to record mission time, aircraft position/quaternion, and camera position/orientation, reducing log size.
+    - Enhanced frame mode: Moved `updateCamera()` call to `LuaExportActivityNextEvent` for consistent frame updates, preventing skips.
+    - Updated version from 1.9 to 2.0 and date to 03 February 2025.
+    - Integrated with rotation test fixes in CameraModes.lua v1.16.
 ]]
 
 -- Logging Control
@@ -26,6 +25,45 @@ enableLogging = true
 -- Camera Update Configuration
 updateMode = "frame"  -- "frame" or "interval"
 updateInterval = 0.02 -- Seconds, used if updateMode is "interval"
+
+-- Track Log Configuration
+local trackLogFile = nil
+local function initTrackLog()
+    if not trackLogFile then
+        trackLogFile = io.open(lfs.writedir() .. "Logs/TrackLog.bin", "wb")
+        if not trackLogFile then
+            log.write("SFL-Camera", log.ERROR, "Failed to open TrackLog.bin for writing.")
+            return false
+        end
+        if enableLogging then
+            log.write("SFL-Camera", log.INFO, "TrackLog.bin initialized at " .. lfs.writedir() .. "Logs/")
+        end
+    end
+    return true
+end
+
+local function writeTrackLog(missionTime, aircraftPos, aircraftQuat, cameraPos, cameraBasis)
+    if trackLogFile then
+        -- Binary format: missionTime (double), aircraftPos (3 floats), aircraftQuat (4 floats), cameraPos (3 floats), cameraBasis (9 floats)
+        trackLogFile:write(string.pack("d", missionTime))
+        trackLogFile:write(string.pack("fff", aircraftPos.x, aircraftPos.y, aircraftPos.z))
+        trackLogFile:write(string.pack("ffff", aircraftQuat.w, aircraftQuat.x, aircraftQuat.y, aircraftQuat.z))
+        trackLogFile:write(string.pack("fff", cameraPos.x, cameraPos.y, cameraPos.z))
+        trackLogFile:write(string.pack("fffffffff", cameraBasis.x.x, cameraBasis.x.y, cameraBasis.x.z,
+                                      cameraBasis.y.x, cameraBasis.y.y, cameraBasis.y.z,
+                                      cameraBasis.z.x, cameraBasis.z.y, cameraBasis.z.z))
+    end
+end
+
+local function closeTrackLog()
+    if trackLogFile then
+        trackLogFile:close()
+        trackLogFile = nil
+        if enableLogging then
+            log.write("SFL-Camera", log.INFO, "TrackLog.bin closed.")
+        end
+    end
+end
 
 -- Load Dependencies
 local function loadScript(path)
@@ -91,6 +129,11 @@ local function updateCamera()
     local camera_data = applyCameraConfig()
     if camera_data then
         LoSetCameraPosition(camera_data)
+        -- Log track data
+        local aircraft_data = getAircraftData(cameraConfig.identifier)
+        if aircraft_data then
+            writeTrackLog(LoGetModelTime(), aircraft_data.pos, aircraft_data.quat, camera_data.p, {x=camera_data.x, y=camera_data.y, z=camera_data.z})
+        end
         if enableLogging then
             log.write("SFL-Camera", log.INFO, "LoSetCameraPosition executed: p=(" .. camera_data.p.x .. "," .. camera_data.p.y .. "," .. camera_data.p.z .. ")")
         end
@@ -112,16 +155,22 @@ function LuaExportActivityNextEvent(t)
         if enableLogging then
             log.write("SFL-Camera", log.INFO, "LuaExportActivityNextEvent in frame mode at t=" .. t)
         end
+        updateCamera() -- Call updateCamera every frame
         return t + 0.01 -- Ensure hook remains active
     end
 end
 
 function LuaExportBeforeNextFrame()
-    if updateMode == "frame" then
-        updateCamera()
-    end
+    -- Removed updateCamera call to avoid duplicate updates in frame mode
 end
 
+function LuaExportStop()
+    closeTrackLog()
+end
+
+-- Initialize track log on script load
+initTrackLog()
+
 if enableLogging then
-    log.write("SFL-Camera", log.INFO, "SFL-Camera.lua (v1.9) initialized with updateMode=" .. updateMode)
+    log.write("SFL-Camera", log.INFO, "SFL-Camera.lua (v2.0) initialized with updateMode=" .. updateMode .. " and track logging.")
 end
