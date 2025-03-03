@@ -3,7 +3,7 @@
 -- Purpose: Provide quaternion operations and aircraft data retrieval for camera positioning.
 -- Author: The Strike Fighter League, LLC
 -- Date: 03 February 2025
--- Version: 1.29
+-- Version: 1.30
 -- Dependencies: None (loaded first by SFL-Camera.lua)
 
 --[[
@@ -14,11 +14,12 @@
     - Quaternion: {w = scalar, x = i, y = j, z = k}
     - Logging: Errors always logged; Warnings/Info logged if enableLogging is true.
 
-    Changes in Version 1.29:
-    - Ensured all functions are globally scoped for accessibility by CameraModes.lua.
-    - Enhanced getAircraftData with fallback to LoGetSelfData() when Position data is invalid.
-    - Added detailed logging for aircraft data retrieval to debug tracking issues.
-    - Updated date and version to reflect modifications as of 03 February 2025.
+    Changes in Version 1.30:
+    - Fixed camera orientation issue in aircraftToCamera():
+      - Replaced 180° y-axis rotation with a 90° x-axis rotation followed by a 180° z-axis rotation.
+      - This correctly maps aircraft (x=forward, y=right, z=down) to camera (x=right, y=up, z=backward).
+    - Added logging of basis vectors in aircraftToCamera() to verify orientation.
+    - Updated version and date to 1.30, 03 February 2025.
 ]]
 
 -- Enable logging by default (can be overridden by SFL-Camera.lua)
@@ -63,7 +64,7 @@ function eulerToQuat(pitch, heading, roll)
         z = cr * cp * sy - sr * sp * cy
     }
     if enableLogging then
-        log.write("Quaternion", log.INFO, "eulerToQuat: pitch=" .. pitch .. ", heading=" .. heading .. ", roll=" .. roll ..
+        log.write("Quaternion", log.INFO, "eulerToQuat: pitch=" .. pitch .. ", heading=" .. heading .. ", roll=" .. roll .. 
                   ", quat=(" .. q.w .. "," .. q.x .. "," .. q.y .. "," .. q.z .. ")")
     end
     return q
@@ -157,16 +158,33 @@ end
 
 -- Convert aircraft orientation to camera orientation
 function aircraftToCamera(q_aircraft)
-    local q_transform = {w = 0, x = 0, y = 1, z = 0} -- 180° rotation around y-axis
+    -- Previous: 180° around y-axis (incorrect)
+    -- New: 90° around x-axis (to rotate z down to y up), then 180° around z-axis (to flip x forward to z backward)
+    local q_x90 = {w = math.cos(math.pi/4), x = math.sin(math.pi/4), y = 0, z = 0} -- 90° around x
+    local q_z180 = {w = 0, x = 0, y = 0, z = 1} -- 180° around z
+    local q_transform = quatMultiply(q_z180, q_x90)
     local q_camera = quatMultiply(q_transform, q_aircraft)
+
+    -- Log quaternions and basis vectors for debugging
     if enableLogging then
         log.write("Quaternion", log.INFO, "aircraftToCamera: q_aircraft=(" .. q_aircraft.w .. "," .. q_aircraft.x .. "," .. q_aircraft.y .. "," .. q_aircraft.z .. 
+                  "), q_transform=(" .. q_transform.w .. "," .. q_transform.x .. "," .. q_transform.y .. "," .. q_transform.z .. 
                   "), q_camera=(" .. q_camera.w .. "," .. q_camera.x .. "," .. q_camera.y .. "," .. q_camera.z .. ")")
+        
+        -- Compute and log basis vectors to verify orientation
+        local basis = {
+            x = {x = 1 - 2*(q_camera.y*q_camera.y + q_camera.z*q_camera.z), y = 2*(q_camera.x*q_camera.y + q_camera.w*q_camera.z), z = 2*(q_camera.x*q_camera.z - q_camera.w*q_camera.y)},
+            y = {x = 2*(q_camera.x*q_camera.y - q_camera.w*q_camera.z), y = 1 - 2*(q_camera.x*q_camera.x + q_camera.z*q_camera.z), z = 2*(q_camera.y*q_camera.z + q_camera.w*q_camera.x)},
+            z = {x = 2*(q_camera.x*q_camera.z + q_camera.w*q_camera.y), y = 2*(q_camera.y*q_camera.z - q_camera.w*q_camera.x), z = 1 - 2*(q_camera.x*q_camera.x + q_camera.y*q_camera.y)}
+        }
+        log.write("Quaternion", log.INFO, "aircraftToCamera basis vectors: x=(" .. basis.x.x .. "," .. basis.x.y .. "," .. basis.x.z .. 
+                  "), y=(" .. basis.y.x .. "," .. basis.y.y .. "," .. basis.y.z .. 
+                  "), z=(" .. basis.z.x .. "," .. basis.z.y .. "," .. basis.z.z .. ")")
     end
     return q_camera
 end
 
 -- Log initialization
 if enableLogging then
-    log.write("Quaternion", log.INFO, "Quaternion.lua (v1.29) loaded with global scope and fallback mechanism.")
+    log.write("Quaternion", log.INFO, "Quaternion.lua (v1.30) loaded with corrected orientation transformation.")
 end
