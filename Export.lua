@@ -31,6 +31,5 @@ function LuaExportActivityNextEvent(t)
     end
 end
 
-
 ---local wwtlfs = require('lfs')
 ---dofile(wwtlfs.writedir() .. 'Scripts/wwt/wwtExport.lua')

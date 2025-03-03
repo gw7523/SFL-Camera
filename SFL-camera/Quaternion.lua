@@ -76,6 +76,9 @@ end
 
 -- Retrieve aircraft data by unit name
 -- Fetches position, heading, pitch, and roll (bank) for a unit identified by its name using export environment functions.
+-- FUTURE CHANGE: SFL-Camera.lua shoud likely identify the aircraft by objectID and pass that on to
+-- another function to pull the actual object. In this way, the repeated calling of getAircraftData()
+-- will be more efficient. 
 function getAircraftData(identifier)
     -- Get all world objects to find the unit's object ID
     local worldObjects = LoGetWorldObjects()
@@ -139,7 +142,7 @@ function getAircraftData(identifier)
         local posStr = position and ("Pos=(" .. position.x .. "," .. position.y .. "," .. position.z .. ")") or "Pos=unavailable"
         log.write("Quaternion", log.INFO, "getAircraftData: Retrieved data for '" .. identifier .. 
                   "' - Heading=" .. heading .. ", Pitch=" .. pitch .. ", Roll=" .. roll .. 
-                  ", Quat=(" .. quat.w .. "," .. q.x .. "," .. q.y .. "," .. q.z .. "), " .. posStr)
+                  ", Quat=(" .. quat.w .. "," .. quat.x .. "," .. quat.y .. "," .. quat.z .. "), " .. posStr)
     end
 
     -- Return a table with all retrieved data
