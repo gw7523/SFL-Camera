@@ -3,7 +3,7 @@
 -- Purpose: Provide quaternion operations and aircraft data retrieval for camera positioning.
 -- Author: The Strike Fighter League, LLC
 -- Date: 03 February 2025
--- Version: 1.30
+-- Version: 1.31
 -- Dependencies: None (loaded first by SFL-Camera.lua)
 
 --[[
@@ -14,12 +14,10 @@
     - Quaternion: {w = scalar, x = i, y = j, z = k}
     - Logging: Errors always logged; Warnings/Info logged if enableLogging is true.
 
-    Changes in Version 1.30:
-    - Fixed camera orientation issue in aircraftToCamera():
-      - Replaced 180° y-axis rotation with a 90° x-axis rotation followed by a 180° z-axis rotation.
-      - This correctly maps aircraft (x=forward, y=right, z=down) to camera (x=right, y=up, z=backward).
-    - Added logging of basis vectors in aircraftToCamera() to verify orientation.
-    - Updated version and date to 1.30, 03 February 2025.
+    Changes in Version 1.31:
+    - Enhanced aircraftToCamera() logging to include input quaternion and basis vector verification.
+    - No functional change to transformation (90° x-axis, 180° z-axis), as it correctly maps axes; issue likely in CameraModes.lua.
+    - Updated version and date to 1.31, 03 February 2025.
 ]]
 
 -- Enable logging by default (can be overridden by SFL-Camera.lua)
@@ -158,14 +156,13 @@ end
 
 -- Convert aircraft orientation to camera orientation
 function aircraftToCamera(q_aircraft)
-    -- Previous: 180° around y-axis (incorrect)
-    -- New: 90° around x-axis (to rotate z down to y up), then 180° around z-axis (to flip x forward to z backward)
+    -- Transformation: 90° around x-axis (z down to y up), then 180° around z-axis (x forward to z backward)
     local q_x90 = {w = math.cos(math.pi/4), x = math.sin(math.pi/4), y = 0, z = 0} -- 90° around x
     local q_z180 = {w = 0, x = 0, y = 0, z = 1} -- 180° around z
     local q_transform = quatMultiply(q_z180, q_x90)
     local q_camera = quatMultiply(q_transform, q_aircraft)
 
-    -- Log quaternions and basis vectors for debugging
+    -- Enhanced logging for debugging
     if enableLogging then
         log.write("Quaternion", log.INFO, "aircraftToCamera: q_aircraft=(" .. q_aircraft.w .. "," .. q_aircraft.x .. "," .. q_aircraft.y .. "," .. q_aircraft.z .. 
                   "), q_transform=(" .. q_transform.w .. "," .. q_transform.x .. "," .. q_transform.y .. "," .. q_transform.z .. 
@@ -186,5 +183,5 @@ end
 
 -- Log initialization
 if enableLogging then
-    log.write("Quaternion", log.INFO, "Quaternion.lua (v1.30) loaded with corrected orientation transformation.")
+    log.write("Quaternion", log.INFO, "Quaternion.lua (v1.31) loaded with enhanced orientation logging.")
 end

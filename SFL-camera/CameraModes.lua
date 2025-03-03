@@ -3,7 +3,7 @@
 -- Purpose: Provide functions to define camera modes relative to an aircraft using quaternions.
 -- Author: The Strike Fighter League, LLC
 -- Date: 03 February 2025
--- Version: 1.12
+-- Version: 1.14
 -- Dependencies: Quaternion.lua (must be loaded first by SFL-Camera.lua)
 
 --[[
@@ -16,19 +16,15 @@
       - Quaternion: {w = scalar, x = i, y = j, z = k}
     - Logging: Errors always logged; Info logged if enableLogging is true.
 
-    Changes in Version 1.12 (03 February 2025):
-    - Corrected camera orientation:
-      - Adjusted computation of camera's up vector to align more closely with aircraft's up vector.
-      - Used projection to ensure camera's up vector is perpendicular to the look direction.
-    - Enhanced logging:
-      - Added mission time stamp using LoGetModelTime().
-      - Logged camera's up vector and aircraft's up vector for comparison.
-    - Updated version to 1.12.
+    Changes in Version 1.14 (03 February 2025):
+    - Orientation Fix: Changed camera up vector (camera_y) to use global up vector (z-axis) projected onto the plane perpendicular to the look direction, improving stability during maneuvers.
+    - Enhanced Logging: Added dot product between camera_y and aircraft’s up vector to quantify alignment (value close to 1 = good alignment).
+    - Updated version to 1.14 from 1.12.
 ]]
 
 -- Dependency Check
 if not quatMultiply or not quatConjugate or not getAircraftData or not aircraftToCamera then
-    log.write("CameraModes", log.ERROR, "Required functions from Quaternion.lua (quatMultiply, quatConjugate, getAircraftData, aircraftToCamera) not found.")
+    log.write("CameraModes", log.ERROR, "Required functions from Quaternion.lua not found.")
     return
 else
     if enableLogging then
@@ -67,7 +63,12 @@ local function projectOntoPlane(u, n)
     }
 end
 
--- Welded Wing Camera: Fixed position relative to aircraft, oriented to look at aircraft origin with up vector aligned to aircraft's up
+-- Local helper function to compute dot product
+local function dot(u, v)
+    return u.x * v.x + u.y * v.y + u.z * v.z
+end
+
+-- Welded Wing Camera: Fixed position relative to aircraft, oriented to look at aircraft origin
 function setWeldedWingCamera(identifier, offset_local)
     local mission_time = LoGetModelTime()
     if enableLogging then
@@ -104,15 +105,6 @@ function setWeldedWingCamera(identifier, offset_local)
         z = aircraft_pos.z + offset_global_vec.z
     }
 
-    -- Compute aircraft's up vector in global frame (local up is -z, since aircraft z is down)
-    local up_local_quat = {w = 0, x = 0, y = 0, z = -1}
-    local aircraft_up_global = quatMultiply(quatMultiply(q_aircraft, up_local_quat), quatConjugate(q_aircraft))
-    local aircraft_up_global_vec = normalize({x = aircraft_up_global.x, y = aircraft_up_global.y, z = aircraft_up_global.z})
-    if enableLogging then
-        log.write("CameraModes", log.INFO, "setWeldedWingCamera: Aircraft Up Global: x=" .. aircraft_up_global_vec.x .. 
-                  ", y=" .. aircraft_up_global_vec.y .. ", z=" .. aircraft_up_global_vec.z)
-    end
-
     -- Compute direction from camera to aircraft (camera z-axis, backward)
     local d = {
         x = aircraft_pos.x - camera_pos.x,
@@ -121,15 +113,24 @@ function setWeldedWingCamera(identifier, offset_local)
     }
     local camera_z = normalize(d) -- z-axis points from camera to aircraft
 
-    -- Project aircraft's up vector onto the plane perpendicular to camera_z
-    local projected_up = projectOntoPlane(aircraft_up_global_vec, camera_z)
-    local camera_y = normalize(projected_up) -- y-axis aligned with projected aircraft up
+    -- Use global up vector (z-axis: {0,0,1}) projected onto the plane perpendicular to camera_z
+    local global_up = {x=0, y=0, z=1}
+    local projected_up = projectOntoPlane(global_up, camera_z)
+    local camera_y = normalize(projected_up) -- y-axis aligned with projected global up
 
     -- Compute camera x-axis (right vector) as cross product of camera_y and camera_z
     local camera_x = cross(camera_y, camera_z)
     camera_x = normalize(camera_x)
 
     local camera_basis = {x = camera_x, y = camera_y, z = camera_z}
+
+    -- Compute aircraft's up vector for logging
+    local up_local_quat = {w = 0, x = 0, y = 0, z = -1}
+    local aircraft_up_global = quatMultiply(quatMultiply(q_aircraft, up_local_quat), quatConjugate(q_aircraft))
+    local aircraft_up_global_vec = normalize({x = aircraft_up_global.x, y = aircraft_up_global.y, z = aircraft_up_global.z})
+
+    -- Compute dot product for alignment check
+    local dot_product = dot(camera_y, aircraft_up_global_vec)
 
     -- Compute vectors for logging
     local aircraft_to_camera = {
@@ -155,6 +156,7 @@ function setWeldedWingCamera(identifier, offset_local)
         log.write("CameraModes", log.INFO, "setWeldedWingCamera: Magnitude of Aircraft-to-Camera Vector: " .. magnitude_atc)
         log.write("CameraModes", log.INFO, "setWeldedWingCamera: Camera Up Vector: (" .. camera_basis.y.x .. "," .. camera_basis.y.y .. "," .. camera_basis.y.z .. ")")
         log.write("CameraModes", log.INFO, "setWeldedWingCamera: Aircraft Up Vector: (" .. aircraft_up_global_vec.x .. "," .. aircraft_up_global_vec.y .. "," .. aircraft_up_global_vec.z .. ")")
+        log.write("CameraModes", log.INFO, "setWeldedWingCamera: Dot Product (Camera Up · Aircraft Up): " .. dot_product)
     end
 
     return {p = camera_pos, x = camera_basis.x, y = camera_basis.y, z = camera_basis.z}
@@ -235,5 +237,5 @@ function setRotatingCinematicCamera(identifier, a, b, c, theta0, phi0, dtheta_dt
 end
 
 if enableLogging then
-    log.write("CameraModes", log.INFO, "CameraModes.lua (v1.12) loaded successfully.")
+    log.write("CameraModes", log.INFO, "CameraModes.lua (v1.14) loaded successfully.")
 end
