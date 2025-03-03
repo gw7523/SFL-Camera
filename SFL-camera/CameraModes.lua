@@ -3,7 +3,7 @@
 -- Purpose: Provide functions to define camera modes relative to an aircraft using quaternions.
 -- Author: The Strike Fighter League, LLC
 -- Date: 03 February 2025
--- Version: 1.14
+-- Version: 1.15
 -- Dependencies: Quaternion.lua (must be loaded first by SFL-Camera.lua)
 
 --[[
@@ -16,10 +16,11 @@
       - Quaternion: {w = scalar, x = i, y = j, z = k}
     - Logging: Errors always logged; Info logged if enableLogging is true.
 
-    Changes in Version 1.14 (03 February 2025):
-    - Orientation Fix: Changed camera up vector (camera_y) to use global up vector (z-axis) projected onto the plane perpendicular to the look direction, improving stability during maneuvers.
-    - Enhanced Logging: Added dot product between camera_y and aircraft’s up vector to quantify alignment (value close to 1 = good alignment).
-    - Updated version to 1.14 from 1.12.
+    Changes in Version 1.15 (03 February 2025):
+    - Orientation Fix: Changed camera up vector (camera_y) to use aircraft's up vector projected onto the plane perpendicular to the look direction, improving stability during maneuvers.
+    - Rotation Test: Added optional 90° rotation cycling around x, y, z axes every 5 seconds for orientation debugging (enable with rotationTestEnabled = true).
+    - Enhanced Logging: Added mission time stamps and dot product logging to quantify alignment.
+    - Updated version to 1.15 from 1.14.
 ]]
 
 -- Dependency Check
@@ -68,6 +69,13 @@ local function dot(u, v)
     return u.x * v.x + u.y * v.y + u.z * v.z
 end
 
+-- Rotation Test Configuration
+local rotationTestEnabled = true  -- Set to true to enable rotation test for debugging
+local rotationInterval = 5        -- Seconds between rotations
+local rotationAxes = {"x", "y", "z"}
+local currentRotationAxisIndex = 1
+local lastRotationTime = 0
+
 -- Welded Wing Camera: Fixed position relative to aircraft, oriented to look at aircraft origin
 function setWeldedWingCamera(identifier, offset_local)
     local mission_time = LoGetModelTime()
@@ -105,6 +113,11 @@ function setWeldedWingCamera(identifier, offset_local)
         z = aircraft_pos.z + offset_global_vec.z
     }
 
+    -- Compute aircraft's up vector in global frame (local up is -z, since aircraft z is down)
+    local up_local_quat = {w = 0, x = 0, y = 0, z = -1}
+    local aircraft_up_global = quatMultiply(quatMultiply(q_aircraft, up_local_quat), quatConjugate(q_aircraft))
+    local aircraft_up_global_vec = normalize({x = aircraft_up_global.x, y = aircraft_up_global.y, z = aircraft_up_global.z})
+
     -- Compute direction from camera to aircraft (camera z-axis, backward)
     local d = {
         x = aircraft_pos.x - camera_pos.x,
@@ -113,10 +126,9 @@ function setWeldedWingCamera(identifier, offset_local)
     }
     local camera_z = normalize(d) -- z-axis points from camera to aircraft
 
-    -- Use global up vector (z-axis: {0,0,1}) projected onto the plane perpendicular to camera_z
-    local global_up = {x=0, y=0, z=1}
-    local projected_up = projectOntoPlane(global_up, camera_z)
-    local camera_y = normalize(projected_up) -- y-axis aligned with projected global up
+    -- Project aircraft's up vector onto the plane perpendicular to camera_z
+    local projected_up = projectOntoPlane(aircraft_up_global_vec, camera_z)
+    local camera_y = normalize(projected_up) -- y-axis aligned with projected aircraft up
 
     -- Compute camera x-axis (right vector) as cross product of camera_y and camera_z
     local camera_x = cross(camera_y, camera_z)
@@ -124,10 +136,36 @@ function setWeldedWingCamera(identifier, offset_local)
 
     local camera_basis = {x = camera_x, y = camera_y, z = camera_z}
 
-    -- Compute aircraft's up vector for logging
-    local up_local_quat = {w = 0, x = 0, y = 0, z = -1}
-    local aircraft_up_global = quatMultiply(quatMultiply(q_aircraft, up_local_quat), quatConjugate(q_aircraft))
-    local aircraft_up_global_vec = normalize({x = aircraft_up_global.x, y = aircraft_up_global.y, z = aircraft_up_global.z})
+    -- Rotation Test: Apply 90° rotation every 5 seconds if enabled
+    if rotationTestEnabled then
+        local current_time = os.time()
+        if current_time - lastRotationTime >= rotationInterval then
+            local axis = rotationAxes[currentRotationAxisIndex]
+            local rotation_quat = {w = math.cos(math.pi/4), x = 0, y = 0, z = 0} -- 90° rotation
+            if axis == "x" then
+                rotation_quat.x = math.sin(math.pi/4)
+            elseif axis == "y" then
+                rotation_quat.y = math.sin(math.pi/4)
+            elseif axis == "z" then
+                rotation_quat.z = math.sin(math.pi/4)
+            end
+            -- Apply rotation to camera basis vectors
+            local function rotateVector(v, q)
+                local v_quat = {w = 0, x = v.x, y = v.y, z = v.z}
+                local result = quatMultiply(quatMultiply(q, v_quat), quatConjugate(q))
+                return {x = result.x, y = result.y, z = result.z}
+            end
+            camera_x = rotateVector(camera_x, rotation_quat)
+            camera_y = rotateVector(camera_y, rotation_quat)
+            camera_z = rotateVector(camera_z, rotation_quat)
+            camera_basis = {x = camera_x, y = camera_y, z = camera_z}
+            currentRotationAxisIndex = (currentRotationAxisIndex % #rotationAxes) + 1
+            lastRotationTime = current_time
+            if enableLogging then
+                log.write("CameraModes", log.INFO, "Applied 90° rotation around " .. axis .. " axis at mission time: " .. mission_time)
+            end
+        end
+    end
 
     -- Compute dot product for alignment check
     local dot_product = dot(camera_y, aircraft_up_global_vec)
@@ -237,5 +275,5 @@ function setRotatingCinematicCamera(identifier, a, b, c, theta0, phi0, dtheta_dt
 end
 
 if enableLogging then
-    log.write("CameraModes", log.INFO, "CameraModes.lua (v1.14) loaded successfully.")
+    log.write("CameraModes", log.INFO, "CameraModes.lua (v1.15) loaded successfully.")
 end
