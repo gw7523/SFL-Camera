@@ -2,8 +2,8 @@
 -- Location: C:\Users\hollo\Saved Games\DCS\Scripts\SFL-camera\Quaternion.lua
 -- Purpose: Provide quaternion operations and aircraft data retrieval for camera positioning.
 -- Author: The Strike Fighter League, LLC
--- Date: 03 February 2025
--- Version: 1.31
+-- Date: 04 February 2025
+-- Version: 1.32
 -- Dependencies: None (loaded first by SFL-Camera.lua)
 
 --[[
@@ -12,18 +12,16 @@
     - Camera Frame: x=Right, y=Up, z=Backward
     - Global Frame: x=East, y=North, z=Up
     - Quaternion: {w = scalar, x = i, y = j, z = k}
-    - Logging: Errors always logged; Warnings/Info logged if enableLogging is true.
+    - Logging: Errors to DCS.log; Info to TrackLog.txt if enableLogging is true.
 
-    Changes in Version 1.31:
-    - Enhanced aircraftToCamera() logging to include input quaternion and basis vector verification.
-    - No functional change to transformation (90° x-axis, 180° z-axis), as it correctly maps axes; issue likely in CameraModes.lua.
-    - Updated version and date to 1.31, 03 February 2025.
+    Changes in Version 1.32 (04 February 2025):
+    - Redirected info logging to logToTrackLog for consistency with TrackLog.txt.
+    - Version updated from 1.31 to 1.32.
 ]]
 
--- Enable logging by default (can be overridden by SFL-Camera.lua)
+-- Enable logging (overridden by SFL-Camera.lua if set)
 enableLogging = true
 
--- Quaternion multiplication
 function quatMultiply(q1, q2)
     local result = {
         w = q1.w * q2.w - q1.x * q2.x - q1.y * q2.y - q1.z * q2.z,
@@ -32,22 +30,20 @@ function quatMultiply(q1, q2)
         z = q1.w * q2.z + q1.x * q2.y - q1.y * q2.x + q1.z * q2.w
     }
     if enableLogging then
-        log.write("Quaternion", log.INFO, "quatMultiply executed: q1=(" .. q1.w .. "," .. q1.x .. "," .. q1.y .. "," .. q1.z .. 
-                  "), q2=(" .. q2.w .. "," .. q2.x .. "," .. q2.y .. "," .. q2.z .. ")")
+        logToTrackLog("INFO", "Quaternion: quatMultiply executed: q1=(" .. q1.w .. "," .. q1.x .. "," .. q1.y .. "," .. q1.z .. 
+                      "), q2=(" .. q2.w .. "," .. q2.x .. "," .. q2.y .. "," .. q2.z .. ")")
     end
     return result
 end
 
--- Quaternion conjugate
 function quatConjugate(q)
     local result = {w = q.w, x = -q.x, y = -q.y, z = -q.z}
     if enableLogging then
-        log.write("Quaternion", log.INFO, "quatConjugate executed: q=(" .. q.w .. "," .. q.x .. "," .. q.y .. "," .. q.z .. ")")
+        logToTrackLog("INFO", "Quaternion: quatConjugate executed: q=(" .. q.w .. "," .. q.x .. "," .. q.y .. "," .. q.z .. ")")
     end
     return result
 end
 
--- Convert Euler angles to quaternion
 function eulerToQuat(pitch, heading, roll)
     local cy = math.cos(heading * 0.5)
     local sy = math.sin(heading * 0.5)
@@ -62,13 +58,12 @@ function eulerToQuat(pitch, heading, roll)
         z = cr * cp * sy - sr * sp * cy
     }
     if enableLogging then
-        log.write("Quaternion", log.INFO, "eulerToQuat: pitch=" .. pitch .. ", heading=" .. heading .. ", roll=" .. roll .. 
-                  ", quat=(" .. q.w .. "," .. q.x .. "," .. q.y .. "," .. q.z .. ")")
+        logToTrackLog("INFO", "Quaternion: eulerToQuat: pitch=" .. pitch .. ", heading=" .. heading .. ", roll=" .. roll .. 
+                      ", quat=(" .. q.w .. "," .. q.x .. "," .. q.y .. "," .. q.z .. ")")
     end
     return q
 end
 
--- Retrieve aircraft data by unit name
 function getAircraftData(identifier)
     local worldObjects = LoGetWorldObjects()
     if not worldObjects then
@@ -81,7 +76,7 @@ function getAircraftData(identifier)
         if obj.UnitName == identifier then
             objectId = id
             if enableLogging then
-                log.write("Quaternion", log.INFO, "Found object ID for '" .. identifier .. "': " .. tostring(id))
+                logToTrackLog("INFO", "Quaternion: Found object ID for '" .. identifier .. "': " .. tostring(id))
             end
             break
         end
@@ -110,10 +105,10 @@ function getAircraftData(identifier)
         local quat = eulerToQuat(pitch, heading, roll)
 
         if enableLogging then
-            log.write("Quaternion", log.INFO, "getAircraftData: '" .. identifier .. 
-                      "' - Pos=(" .. position.x .. "," .. position.y .. "," .. position.z .. 
-                      "), Heading=" .. heading .. ", Pitch=" .. pitch .. ", Roll=" .. roll ..
-                      ", Quat=(" .. quat.w .. "," .. quat.x .. "," .. quat.y .. "," .. quat.z .. ")")
+            logToTrackLog("INFO", "Quaternion: getAircraftData: '" .. identifier .. 
+                          "' - Pos=(" .. position.x .. "," .. position.y .. "," .. position.z .. 
+                          "), Heading=" .. heading .. ", Pitch=" .. pitch .. ", Roll=" .. roll ..
+                          ", Quat=(" .. quat.w .. "," .. quat.x .. "," .. quat.y .. "," .. quat.z .. ")")
         end
 
         return {
@@ -124,7 +119,6 @@ function getAircraftData(identifier)
             quat = quat
         }
     else
-        -- Fallback to LoGetSelfData if the aircraft is the player's own
         local selfData = LoGetSelfData()
         if selfData and selfData.Name == identifier then
             local position = selfData.Position
@@ -134,10 +128,10 @@ function getAircraftData(identifier)
             local quat = eulerToQuat(pitch, heading, roll)
 
             if enableLogging then
-                log.write("Quaternion", log.INFO, "getAircraftData (fallback): '" .. identifier .. 
-                          "' - Pos=(" .. position.x .. "," .. position.y .. "," .. position.z .. 
-                          "), Heading=" .. heading .. ", Pitch=" .. pitch .. ", Roll=" .. roll ..
-                          ", Quat=(" .. quat.w .. "," .. quat.x .. "," .. quat.y .. "," .. quat.z .. ")")
+                logToTrackLog("INFO", "Quaternion: getAircraftData (fallback): '" .. identifier .. 
+                              "' - Pos=(" .. position.x .. "," .. position.y .. "," .. position.z .. 
+                              "), Heading=" .. heading .. ", Pitch=" .. pitch .. ", Roll=" .. roll ..
+                              ", Quat=(" .. quat.w .. "," .. quat.x .. "," .. quat.y .. "," .. quat.z .. ")")
             end
 
             return {
@@ -154,34 +148,28 @@ function getAircraftData(identifier)
     end
 end
 
--- Convert aircraft orientation to camera orientation
 function aircraftToCamera(q_aircraft)
-    -- Transformation: 90° around x-axis (z down to y up), then 180° around z-axis (x forward to z backward)
-    local q_x90 = {w = math.cos(math.pi/4), x = math.sin(math.pi/4), y = 0, z = 0} -- 90° around x
-    local q_z180 = {w = 0, x = 0, y = 0, z = 1} -- 180° around z
+    local q_x90 = {w = math.cos(math.pi/4), x = math.sin(math.pi/4), y = 0, z = 0}
+    local q_z180 = {w = 0, x = 0, y = 0, z = 1}
     local q_transform = quatMultiply(q_z180, q_x90)
     local q_camera = quatMultiply(q_transform, q_aircraft)
 
-    -- Enhanced logging for debugging
     if enableLogging then
-        log.write("Quaternion", log.INFO, "aircraftToCamera: q_aircraft=(" .. q_aircraft.w .. "," .. q_aircraft.x .. "," .. q_aircraft.y .. "," .. q_aircraft.z .. 
-                  "), q_transform=(" .. q_transform.w .. "," .. q_transform.x .. "," .. q_transform.y .. "," .. q_transform.z .. 
-                  "), q_camera=(" .. q_camera.w .. "," .. q_camera.x .. "," .. q_camera.y .. "," .. q_camera.z .. ")")
-        
-        -- Compute and log basis vectors to verify orientation
+        logToTrackLog("INFO", "Quaternion: aircraftToCamera: q_aircraft=(" .. q_aircraft.w .. "," .. q_aircraft.x .. "," .. q_aircraft.y .. "," .. q_aircraft.z .. 
+                      "), q_transform=(" .. q_transform.w .. "," .. q_transform.x .. "," .. q_transform.y .. "," .. q_transform.z .. 
+                      "), q_camera=(" .. q_camera.w .. "," .. q_camera.x .. "," .. q_camera.y .. "," .. q_camera.z .. ")")
         local basis = {
             x = {x = 1 - 2*(q_camera.y*q_camera.y + q_camera.z*q_camera.z), y = 2*(q_camera.x*q_camera.y + q_camera.w*q_camera.z), z = 2*(q_camera.x*q_camera.z - q_camera.w*q_camera.y)},
             y = {x = 2*(q_camera.x*q_camera.y - q_camera.w*q_camera.z), y = 1 - 2*(q_camera.x*q_camera.x + q_camera.z*q_camera.z), z = 2*(q_camera.y*q_camera.z + q_camera.w*q_camera.x)},
             z = {x = 2*(q_camera.x*q_camera.z + q_camera.w*q_camera.y), y = 2*(q_camera.y*q_camera.z - q_camera.w*q_camera.x), z = 1 - 2*(q_camera.x*q_camera.x + q_camera.y*q_camera.y)}
         }
-        log.write("Quaternion", log.INFO, "aircraftToCamera basis vectors: x=(" .. basis.x.x .. "," .. basis.x.y .. "," .. basis.x.z .. 
-                  "), y=(" .. basis.y.x .. "," .. basis.y.y .. "," .. basis.y.z .. 
-                  "), z=(" .. basis.z.x .. "," .. basis.z.y .. "," .. basis.z.z .. ")")
+        logToTrackLog("INFO", "Quaternion: aircraftToCamera basis vectors: x=(" .. basis.x.x .. "," .. basis.x.y .. "," .. basis.x.z .. 
+                      "), y=(" .. basis.y.x .. "," .. basis.y.y .. "," .. basis.y.z .. 
+                      "), z=(" .. basis.z.x .. "," .. basis.z.y .. "," .. basis.z.z .. ")")
     end
     return q_camera
 end
 
--- Log initialization
 if enableLogging then
-    log.write("Quaternion", log.INFO, "Quaternion.lua (v1.31) loaded with enhanced orientation logging.")
+    logToTrackLog("INFO", "Quaternion.lua (v1.32) loaded with info logging to TrackLog.txt.")
 end

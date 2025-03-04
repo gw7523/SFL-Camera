@@ -2,8 +2,8 @@
 -- Location: C:\Users\hollo\Saved Games\DCS\Scripts\SFL-camera\SFL-Camera.lua
 -- Purpose: Central script to load dependencies, apply camera configurations, and update camera position in DCS Export.lua environment.
 -- Author: The Strike Fighter League, LLC
--- Date: 03 February 2025
--- Version: 2.1
+-- Date: 04 February 2025
+-- Version: 2.2
 -- Dependencies: Quaternion.lua, Camera-cfg.lua, CameraModes.lua
 
 --[[
@@ -11,13 +11,13 @@
     - Loads scripts in order: Quaternion.lua, Camera-cfg.lua, CameraModes.lua.
     - Applies camera configurations and updates position via export hooks.
     - Update modes: "frame" (every frame) or "interval" (time-based).
+    - Logging: Errors to DCS.log, Info to TrackLog.txt.
 
-    Changes in Version 2.1 (03 February 2025):
-    - Fixed tracking issue: Moved updateCamera call to LuaExportAfterNextFrame for "frame" mode to ensure per-frame updates, addressing the simulation not tracking the aircraft.
-    - Fixed logging error: Replaced binary logging with string.pack (unavailable in DCS Lua) with text-based logging to TrackLog.txt using string.format, resolving "attempt to call field 'pack' (a nil value)" error.
-    - Added error handling: Wrapped writeTrackLog in pcall to prevent script failure if logging fails, ensuring continuous camera updates.
-    - Updated version from 2.0 to 2.1 to reflect these critical fixes.
-    - Enhanced comments: Detailed explanations of changes and their impact on functionality.
+    Changes in Version 2.2 (04 February 2025):
+    - Added logToTrackLog function to redirect info messages to TrackLog.txt, reducing DCS.log size.
+    - Updated logging in updateCamera and other functions to use logToTrackLog for info messages.
+    - Version updated from 2.1 to 2.2.
+    - Enhanced comments for clarity and maintainability.
 ]]
 
 -- Logging Control
@@ -37,15 +37,21 @@ local function initTrackLog()
             return false
         end
         if enableLogging then
-            log.write("SFL-Camera", log.INFO, "TrackLog.txt initialized at " .. lfs.writedir() .. "Logs/")
+            logToTrackLog("INFO", "SFL-Camera: TrackLog.txt initialized at " .. lfs.writedir() .. "Logs/")
         end
     end
     return true
 end
 
+local function logToTrackLog(level, message)
+    if trackLogFile then
+        trackLogFile:write(level .. ": " .. message .. "\n")
+        trackLogFile:flush()
+    end
+end
+
 local function writeTrackLog(missionTime, aircraftPos, aircraftQuat, cameraPos, cameraBasis)
     if trackLogFile then
-        -- Text-based logging: Replaces binary string.pack with string.format for DCS Lua compatibility
         local logEntry = string.format(
             "Time: %.3f, AircraftPos: (%.2f, %.2f, %.2f), AircraftQuat: (%.4f, %.4f, %.4f, %.4f), " ..
             "CameraPos: (%.2f, %.2f, %.2f), CameraBasis: (%.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f)\n",
@@ -58,7 +64,7 @@ local function writeTrackLog(missionTime, aircraftPos, aircraftQuat, cameraPos, 
             cameraBasis.z.x, cameraBasis.z.y, cameraBasis.z.z
         )
         trackLogFile:write(logEntry)
-        trackLogFile:flush() -- Ensure data is written to file immediately
+        trackLogFile:flush()
     end
 end
 
@@ -67,7 +73,7 @@ local function closeTrackLog()
         trackLogFile:close()
         trackLogFile = nil
         if enableLogging then
-            log.write("SFL-Camera", log.INFO, "TrackLog.txt closed.")
+            logToTrackLog("INFO", "SFL-Camera: TrackLog.txt closed.")
         end
     end
 end
@@ -80,7 +86,7 @@ local function loadScript(path)
         return false
     end
     if enableLogging then
-        log.write("SFL-Camera", log.INFO, "Successfully loaded " .. path)
+        logToTrackLog("INFO", "SFL-Camera: Successfully loaded " .. path)
     end
     return true
 end
@@ -119,7 +125,7 @@ function applyCameraConfig()
     if mode == "welded_wing" then
         local camera_data = setWeldedWingCamera(identifier, params.offset_local)
         if camera_data and enableLogging then
-            log.write("SFL-Camera", log.INFO, "Applied welded_wing mode for '" .. identifier .. "'")
+            logToTrackLog("INFO", "SFL-Camera: Applied welded_wing mode for '" .. identifier .. "'")
         end
         return camera_data
     else
@@ -131,12 +137,11 @@ end
 -- Update Camera Position
 local function updateCamera()
     if enableLogging then
-        log.write("SFL-Camera", log.INFO, "updateCamera called at t=" .. tostring(os.clock()))
+        logToTrackLog("INFO", "SFL-Camera: updateCamera called at t=" .. tostring(LoGetModelTime()))
     end
     local camera_data = applyCameraConfig()
     if camera_data then
         LoSetCameraPosition(camera_data)
-        -- Log track data with error handling to prevent script interruption
         local aircraft_data = getAircraftData(cameraConfig.identifier)
         if aircraft_data then
             local success, err = pcall(function()
@@ -148,8 +153,8 @@ local function updateCamera()
             end
         end
         if enableLogging then
-            log.write("SFL-Camera", log.INFO, "LoSetCameraPosition executed: p=(" .. camera_data.p.x .. "," .. 
-                      camera_data.p.y .. "," .. camera_data.p.z .. ")")
+            logToTrackLog("INFO", "SFL-Camera: LoSetCameraPosition executed: p=(" .. camera_data.p.x .. "," .. 
+                          camera_data.p.y .. "," .. camera_data.p.z .. ")")
         end
     else
         log.write("SFL-Camera", log.WARNING, "No camera_data returned from applyCameraConfig()")
@@ -170,7 +175,7 @@ else -- "frame" mode
     function LuaExportAfterNextFrame()
         updateCamera()
         if enableLogging then
-            log.write("SFL-Camera", log.INFO, "LuaExportAfterNextFrame called updateCamera")
+            logToTrackLog("INFO", "SFL-Camera: LuaExportAfterNextFrame called updateCamera")
         end
     end
 end
@@ -183,5 +188,5 @@ end
 initTrackLog()
 
 if enableLogging then
-    log.write("SFL-Camera", log.INFO, "SFL-Camera.lua (v2.1) initialized with updateMode=" .. updateMode .. " and text track logging.")
+    logToTrackLog("INFO", "SFL-Camera.lua (v2.2) initialized with updateMode=" .. updateMode .. " and text track logging.")
 end
