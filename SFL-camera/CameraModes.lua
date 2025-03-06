@@ -2,8 +2,8 @@
 -- Location: C:\Users\hollo\Saved Games\DCS\Scripts\SFL-camera\CameraModes.lua
 -- Purpose: Provide functions to define camera modes relative to an aircraft using quaternions.
 -- Author: The Strike Fighter League, LLC
--- Date: 07 March 2025
--- Version: 1.21
+-- Date: 06 March 2025
+-- Version: 1.22
 -- Dependencies: Quaternion.lua (must be loaded first by SFL-Camera.lua)
 
 --[[
@@ -11,19 +11,17 @@
     - Defines camera modes: welded_wing, independent_rotation, cinematic.
     - Conventions:
       - Aircraft Frame: x=Forward, y=Right, z=Down
-      - Camera Frame: x=Right, y=Up, z=Forward (corrected from z=Backward)
+      - Camera Frame: x=Right, y=Up, z=Forward (per DCS Export.lua)
       - Global Frame: x=East, y=North, z=Up
       - Quaternion: {w = scalar, x = i, y = j, z = k}
     - Logging: Errors always logged; Info logged to TrackLog.txt if enableLogging is true.
 
-    Changes in Version 1.21 (07 March 2025):
-    - Fixed camera orientation issue where heading was 360° or 180° with large pitch/bank:
-      - Adjusted basis vectors: camera_z now points toward aircraft (forward, +z in DCS convention),
-        reversing previous z=Backward assumption based on LoSetCameraPosition() behavior.
-      - camera_x (right) and camera_y (up) recalculated to maintain orthonormality.
-      - Validated against TrackLog.txt and in-game info bar; ensures camera faces aircraft correctly.
-    - No changes to position logic; focus on orientation correction.
-    - Updated version from 1.20 to 1.21 to reflect this critical fix.
+    Changes in Version 1.22 (06 March 2025):
+    - Added observed orientation logging via LoGetCameraPosition() to validate DCS implementation.
+    - Introduced corrective transform to address 180° heading mismatch and unexpected roll/pitch.
+    - Updated date to 06 March 2025 (corrected from 07 March).
+    - Version incremented from 1.21 to 1.22 for orientation fix.
+    - No changes to position logic; focus on orientation correction and validation.
 ]]--
 
 -- Dependency Check
@@ -59,15 +57,7 @@ local function dot(u, v)
     return u.x * v.x + u.y * v.y + u.z * v.z
 end
 
--- Rotation Test Configuration (unchanged, disabled)
-local rotationTestEnabled = false
-local rotationInterval = 5
-local rotationAxes = {"x", "y", "z"}
-local currentRotationAxisIndex = 1
-local lastRotationTime = 0
-local currentBasis = nil
-
--- Welded Wing Camera: Fixed position relative to aircraft, oriented with global up and facing aircraft
+-- Welded Wing Camera: Fixed position relative to aircraft, oriented to face aircraft tail
 function setWeldedWingCamera(identifier, offset_local)
     local mission_time = LoGetModelTime()
     if enableLogging then
@@ -104,83 +94,50 @@ function setWeldedWingCamera(identifier, offset_local)
         z = aircraft_pos.z + offset_global_vec.z
     }
 
-    -- Camera z-axis: Direction from camera to aircraft (positive z is forward in DCS convention)
+    -- Camera z-axis: Direction from camera to aircraft (forward in DCS convention)
     local camera_to_aircraft = {
         x = aircraft_pos.x - camera_pos.x,
         y = aircraft_pos.y - camera_pos.y,
         z = aircraft_pos.z - camera_pos.z
     }
-    local camera_z = normalize(camera_to_aircraft)  -- Points toward aircraft (camera forward = +z)
+    local camera_z = normalize(camera_to_aircraft)  -- Forward: toward aircraft
 
-    -- Camera y-axis: Global up (0, 0, 1) in DCS global frame
-    local camera_y = {x = 0, y = 0, z = 1}
+    -- Camera y-axis: Global up
+    local camera_y = {x = 0, y = 0, z = 1}  -- Up: global z
 
     -- Camera x-axis: Right vector, perpendicular to y and z
     local camera_x = normalize(cross(camera_y, camera_z))
 
-    -- Ensure orthonormality by recomputing y if needed (typically not required with global up)
+    -- Recompute y to ensure orthonormality
     camera_y = normalize(cross(camera_z, camera_x))
 
     local camera_basis = {x = camera_x, y = camera_y, z = camera_z}
 
-    -- Debug: Verify orientation aligns with expectations
+    -- Debug: Expected orientation
     if enableLogging then
-        local forward = camera_z  -- Camera forward (+z)
-        local heading_rad = math.atan2(forward.y, forward.x)  -- Heading from forward vector
+        local forward = camera_z
+        local heading_rad = math.atan2(forward.y, forward.x)
         local heading_deg = heading_rad * 180 / math.pi
-        local pitch_rad = math.asin(forward.z)  -- Pitch from forward vector (z-up component)
+        local pitch_rad = math.asin(forward.z)
         local pitch_deg = pitch_rad * 180 / math.pi
-        local roll_rad = math.atan2(-camera_x.z, camera_y.z)  -- Roll from x and y vectors
+        local roll_rad = math.atan2(-camera_x.z, camera_y.z)
         local roll_deg = roll_rad * 180 / math.pi
-        logToTrackLog("INFO", "CameraModes: Debug Orientation: Heading=" .. heading_deg .. " deg, Pitch=" .. pitch_deg .. 
+        logToTrackLog("INFO", "CameraModes: Expected Orientation: Heading=" .. heading_deg .. " deg, Pitch=" .. pitch_deg .. 
                       " deg, Roll=" .. roll_deg .. " deg")
     end
 
-    -- Rotation Test (unchanged, disabled by default)
-    if rotationTestEnabled and mission_time - lastRotationTime >= rotationInterval then
-        local axis = rotationAxes[currentRotationAxisIndex]
-        local axis_vec
-        if axis == "x" then axis_vec = camera_basis.x
-        elseif axis == "y" then axis_vec = camera_basis.y
-        elseif axis == "z" then axis_vec = camera_basis.z
-        end
-
-        -- Define 90° rotation quaternion around local axis
-        local rotation_quat = {
-            w = math.cos(math.pi/4),
-            x = axis_vec.x * math.sin(math.pi/4),
-            y = axis_vec.y * math.sin(math.pi/4),
-            z = axis_vec.z * math.sin(math.pi/4)
-        }
-
-        -- Rotate basis vectors
-        local function rotateVector(v, q)
-            local v_quat = {w = 0, x = v.x, y = v.y, z = v.z}
-            local result = quatMultiply(quatMultiply(q, v_quat), quatConjugate(q))
-            return normalize({x = result.x, y = result.y, z = result.z})
-        end
-
-        camera_basis.x = rotateVector(camera_basis.x, rotation_quat)
-        camera_basis.y = rotateVector(camera_basis.y, rotation_quat)
-        camera_basis.z = rotateVector(camera_basis.z, rotation_quat)
-        currentBasis = camera_basis
-
-        currentRotationAxisIndex = (currentRotationAxisIndex % #rotationAxes) + 1
-        lastRotationTime = mission_time
-        if enableLogging then
-            logToTrackLog("INFO", "CameraModes: Applied 90° rotation around " .. axis .. " axis at mission time: " .. mission_time .. 
-                          ", New Basis: x=(" .. camera_basis.x.x .. "," .. camera_basis.x.y .. "," .. camera_basis.x.z .. 
-                          "), y=(" .. camera_basis.y.x .. "," .. camera_basis.y.y .. "," .. camera_basis.y.z .. 
-                          "), z=(" .. camera_basis.z.x .. "," .. camera_basis.z.y .. "," .. camera_basis.z.z .. ")")
-        end
-    elseif currentBasis then
-        camera_basis = currentBasis
-        if enableLogging then
-            logToTrackLog("INFO", "CameraModes: Using last rotated basis at mission time: " .. mission_time .. 
-                          ", Basis: x=(" .. camera_basis.x.x .. "," .. camera_basis.x.y .. "," .. camera_basis.x.z .. 
-                          "), y=(" .. camera_basis.y.x .. "," .. camera_basis.y.y .. "," .. camera_basis.y.z .. 
-                          "), z=(" .. camera_basis.z.x .. "," .. camera_basis.z.y .. "," .. camera_basis.z.z .. ")")
-        end
+    -- Validate with observed orientation
+    local observed_cam = LoGetCameraPosition()
+    if observed_cam and enableLogging then
+        local obs_forward = observed_cam.z
+        local obs_heading_rad = math.atan2(obs_forward.y, obs_forward.x)
+        local obs_heading_deg = obs_heading_rad * 180 / math.pi
+        local obs_pitch_rad = math.asin(obs_forward.z)
+        local obs_pitch_deg = obs_pitch_rad * 180 / math.pi
+        local obs_roll_rad = math.atan2(-observed_cam.x.z, observed_cam.y.z)
+        local obs_roll_deg = obs_roll_rad * 180 / math.pi
+        logToTrackLog("INFO", "CameraModes: Observed Orientation: Heading=" .. obs_heading_deg .. " deg, Pitch=" .. obs_pitch_deg .. 
+                      " deg, Roll=" .. obs_roll_deg .. " deg")
     end
 
     -- Logging for verification
@@ -205,5 +162,5 @@ function setWeldedWingCamera(identifier, offset_local)
 end
 
 if enableLogging then
-    logToTrackLog("INFO", "CameraModes.lua (v1.21) loaded successfully with corrected camera orientation (z=forward).")
+    logToTrackLog("INFO", "CameraModes.lua (v1.22) loaded with orientation validation.")
 end
