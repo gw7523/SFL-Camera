@@ -3,7 +3,7 @@
 -- Purpose: Central script to load dependencies, apply camera configurations, and update camera position in DCS Export.lua environment.
 -- Author: The Strike Fighter League, LLC
 -- Date: 04 February 2025
--- Version: 2.2
+-- Version: 2.3
 -- Dependencies: Quaternion.lua, Camera-cfg.lua, CameraModes.lua
 
 --[[
@@ -13,15 +13,15 @@
     - Update modes: "frame" (every frame) or "interval" (time-based).
     - Logging: Errors to DCS.log, Info to TrackLog.txt.
 
-    Changes in Version 2.2 (04 February 2025):
-    - Added logToTrackLog function to redirect info messages to TrackLog.txt, reducing DCS.log size.
-    - Updated logging in updateCamera and other functions to use logToTrackLog for info messages.
-    - Version updated from 2.1 to 2.2.
-    - Enhanced comments for clarity and maintainability.
+    Changes in Version 2.3 (04 February 2025):
+    - Moved initTrackLog() and logToTrackLog definition to the top to ensure availability before loading dependencies.
+    - Made enableLogging and logToTrackLog global for access in loaded scripts.
+    - Added logging of world objects to verify aircraft identifier.
+    - Version updated from 2.2 to 2.3.
 ]]
 
 -- Logging Control
-enableLogging = true
+enableLogging = true  -- Global variable for consistent logging across scripts
 
 -- Camera Update Configuration
 updateMode = "frame"  -- "frame" or "interval"
@@ -29,7 +29,7 @@ updateInterval = 0.02 -- Seconds, used if updateMode is "interval"
 
 -- Track Log Configuration
 local trackLogFile = nil
-local function initTrackLog()
+function initTrackLog()
     if not trackLogFile then
         trackLogFile = io.open(lfs.writedir() .. "Logs/TrackLog.txt", "a") -- Append mode for text logging
         if not trackLogFile then
@@ -43,7 +43,11 @@ local function initTrackLog()
     return true
 end
 
-local function logToTrackLog(level, message)
+-- Initialize track log early
+initTrackLog()
+
+-- Define logToTrackLog globally before dependencies
+function logToTrackLog(level, message)
     if trackLogFile then
         trackLogFile:write(level .. ": " .. message .. "\n")
         trackLogFile:flush()
@@ -115,6 +119,14 @@ if not setWeldedWingCamera then
     return
 end
 
+-- Log world objects to verify aircraft identifier
+local worldObjects = LoGetWorldObjects()
+for id, obj in pairs(worldObjects) do
+    if enableLogging then
+        logToTrackLog("INFO", "SFL-Camera: Object ID: " .. id .. ", Name: " .. (obj.UnitName or "N/A"))
+    end
+end
+
 -- Apply Camera Configuration
 function applyCameraConfig()
     local config = cameraConfig
@@ -184,9 +196,6 @@ function LuaExportStop()
     closeTrackLog()
 end
 
--- Initialize track log on script load
-initTrackLog()
-
 if enableLogging then
-    logToTrackLog("INFO", "SFL-Camera.lua (v2.2) initialized with updateMode=" .. updateMode .. " and text track logging.")
+    logToTrackLog("INFO", "SFL-Camera.lua (v2.3) initialized with updateMode=" .. updateMode .. " and text track logging.")
 end
