@@ -2,8 +2,8 @@
 -- Location: C:\Users\hollo\Saved Games\DCS\Scripts\SFL-camera\SFL-Camera.lua
 -- Purpose: Central script to load dependencies, apply camera configurations, and update camera position in DCS Export.lua environment.
 -- Author: The Strike Fighter League, LLC
--- Date: 04 February 2025
--- Version: 2.3
+-- Date: 06 February 2025
+-- Version: 2.4
 -- Dependencies: Quaternion.lua, Camera-cfg.lua, CameraModes.lua
 
 --[[
@@ -13,12 +13,12 @@
     - Update modes: "frame" (every frame) or "interval" (time-based).
     - Logging: Errors to DCS.log, Info to TrackLog.txt.
 
-    Changes in Version 2.3 (04 February 2025):
-    - Moved initTrackLog() and logToTrackLog definition to the top to ensure availability before loading dependencies.
-    - Made enableLogging and logToTrackLog global for access in loaded scripts.
-    - Added logging of world objects to verify aircraft identifier.
-    - Version updated from 2.2 to 2.3.
-]]
+    Changes in Version 2.4 (06 February 2025):
+    - Fixed logging error by defining logToTrackLog before calling initTrackLog(), resolving the 'attempt to call global logToTrackLog (a nil value)' error at line 40.
+    - Updated date to 06 February 2025 to reflect current task date.
+    - Incremented version from 2.3 to 2.4 to denote this fix.
+    - No functional changes to camera logic; fix focuses on script execution stability.
+]]--
 
 -- Logging Control
 enableLogging = true  -- Global variable for consistent logging across scripts
@@ -29,6 +29,15 @@ updateInterval = 0.02 -- Seconds, used if updateMode is "interval"
 
 -- Track Log Configuration
 local trackLogFile = nil
+
+-- Define logToTrackLog globally before initTrackLog
+function logToTrackLog(level, message)
+    if trackLogFile then
+        trackLogFile:write(level .. ": " .. message .. "\n")
+        trackLogFile:flush()
+    end
+end
+
 function initTrackLog()
     if not trackLogFile then
         trackLogFile = io.open(lfs.writedir() .. "Logs/TrackLog.txt", "a") -- Append mode for text logging
@@ -43,16 +52,8 @@ function initTrackLog()
     return true
 end
 
--- Initialize track log early
+-- Initialize track log after defining logToTrackLog
 initTrackLog()
-
--- Define logToTrackLog globally before dependencies
-function logToTrackLog(level, message)
-    if trackLogFile then
-        trackLogFile:write(level .. ": " .. message .. "\n")
-        trackLogFile:flush()
-    end
-end
 
 local function writeTrackLog(missionTime, aircraftPos, aircraftQuat, cameraPos, cameraBasis)
     if trackLogFile then
@@ -197,5 +198,5 @@ function LuaExportStop()
 end
 
 if enableLogging then
-    logToTrackLog("INFO", "SFL-Camera.lua (v2.3) initialized with updateMode=" .. updateMode .. " and text track logging.")
+    logToTrackLog("INFO", "SFL-Camera.lua (v2.4) initialized with updateMode=" .. updateMode .. " and text track logging.")
 end
