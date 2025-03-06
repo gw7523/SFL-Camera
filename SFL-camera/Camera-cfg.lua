@@ -41,7 +41,8 @@ cameraConfig = {
     identifier = "SFL-Pilot-1",  -- Aircraft identifier (unit name for precise targeting)
     mode = "welded_wing",       -- Camera mode
     params = {
-        offset_local = {x = 20, y = 5, z = 2}  -- 20m forward, 5m right, 2m below (x increased from 15 to 20)
+       -- offset_local = {x = 20, y = 5, z = 2}  -- 20m forward, 5m right, 2m below (x increased from 15 to 20)
+        offset_local = {x = -30, y = 0, z = 0}  -- 30m behind
     }
 }
 
