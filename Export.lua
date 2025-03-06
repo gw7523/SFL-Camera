@@ -1,17 +1,16 @@
 -- C:\Users\hollo\Saved Games\DCS\Scripts\Export.lua
--- Version: 1.5
+-- Version: 1.6
 -- Purpose: Integrates SFL-Camera.lua into the DCS Export environment via LuaExport hooks.
--- Date: 03 February 2025
+-- Date: 06 February 2025
 -- Notes:
 --   - Preserves existing LuaExportActivityNextEvent functionality.
 --   - Adds detailed logging for debugging.
 
 --[[
-    Changes in Version 1.5:
-    - Enhanced logging to track original and SFL LuaExportActivityNextEvent calls.
-    - Adjusted timing to integrate with SFL-Camera.lua’s update mechanism.
-    - Updated date to 03 February 2025.
-]]
+    Changes in Version 1.6:
+    - No functional changes; updated date to 06 February 2025 for consistency with SFL-Camera.lua v2.4.
+    - Version incremented from 1.5 to 1.6.
+]]--
 
 -- Save original LuaExportActivityNextEvent
 local original_LuaExportActivityNextEvent = LuaExportActivityNextEvent
@@ -44,5 +43,5 @@ function LuaExportActivityNextEvent(t)
 end
 
 if log then
-    log.write("Export", log.INFO, "Export.lua (v1.5) loaded successfully.")
+    log.write("Export", log.INFO, "Export.lua (v1.6) loaded successfully.")
 end
