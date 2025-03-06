@@ -2,8 +2,8 @@
 -- Location: C:\Users\hollo\Saved Games\DCS\Scripts\SFL-camera\CameraModes.lua
 -- Purpose: Provide functions to define camera modes relative to an aircraft using quaternions.
 -- Author: The Strike Fighter League, LLC
--- Date: 07 February 2025
--- Version: 1.18
+-- Date: 06 March 2025
+-- Version: 1.19
 -- Dependencies: Quaternion.lua (must be loaded first by SFL-Camera.lua)
 
 --[[
@@ -16,16 +16,14 @@
       - Quaternion: {w = scalar, x = i, y = j, z = k}
     - Logging: Errors always logged; Info logged to TrackLog.txt if enableLogging is true.
 
-    Changes in Version 1.18 (07 February 2025):
-    - Fixed camera orientation issue where camera looked at nadir/zenith:
-      - Revised setWeldedWingCamera basis vector calculation:
-        - z-axis: Now points from camera to aircraft (negative offset vector).
-        - y-axis: Aligned with aircraft up vector, orthonormalized against z-axis.
-        - x-axis: Cross product of y and z for right-handed system.
-      - Ensures camera consistently faces aircraft while respecting up direction.
-    - Version updated from 1.17 to 1.18.
-    - Added detailed comments on orientation fix and coordinate conventions.
-]]--
+    Changes in Version 1.19 (06 March 2025):
+    - Addressed camera orientation cross-coupling with aircraft pitch/roll/heading:
+      - Previous version (1.18) aligned camera y-axis with aircraft up vector, causing orientation to follow aircraft attitude.
+      - New approach: Set camera y-axis (up) to global up (0,0,1), z-axis (backward) to normalized camera-to-aircraft vector.
+      - Ensures stable orientation: aircraft stays in frame, horizon remains level regardless of aircraft maneuvers.
+    - Removed aircraft up vector dependency in basis calculation to decouple camera orientation.
+    - Version updated from 1.18 to 1.19.
+]]
 
 -- Dependency Check
 if not quatMultiply or not quatConjugate or not getAircraftData or not aircraftToCamera then
@@ -60,7 +58,7 @@ local function dot(u, v)
     return u.x * v.x + u.y * v.y + u.z * v.z
 end
 
--- Rotation Test Configuration (unchanged)
+-- Rotation Test Configuration (unchanged, disabled)
 local rotationTestEnabled = false  -- Disabled by default for stable tracking
 local rotationInterval = 5         -- Seconds between rotations
 local rotationAxes = {"x", "y", "z"}
@@ -68,7 +66,7 @@ local currentRotationAxisIndex = 1
 local lastRotationTime = 0
 local currentBasis = nil           -- Persistent rotated basis vectors
 
--- Welded Wing Camera: Fixed position relative to aircraft, oriented to look at aircraft origin
+-- Welded Wing Camera: Fixed position relative to aircraft, oriented with global up and facing aircraft
 function setWeldedWingCamera(identifier, offset_local)
     local mission_time = LoGetModelTime()
     if enableLogging then
@@ -105,33 +103,21 @@ function setWeldedWingCamera(identifier, offset_local)
         z = aircraft_pos.z + offset_global_vec.z
     }
 
-    -- Aircraft up vector (local -z, i.e., upward in aircraft frame)
-    local up_local_quat = {w = 0, x = 0, y = 0, z = -1}
-    local aircraft_up_global = quatMultiply(quatMultiply(q_aircraft, up_local_quat), quatConjugate(q_aircraft))
-    local aircraft_up_global_vec = normalize({x = aircraft_up_global.x, y = aircraft_up_global.y, z = aircraft_up_global.z})
-
     -- Camera z-axis: Direction from camera to aircraft (negative offset vector)
     local camera_to_aircraft = {
         x = aircraft_pos.x - camera_pos.x,
         y = aircraft_pos.y - camera_pos.y,
         z = aircraft_pos.z - camera_pos.z
     }
-    local camera_z = normalize(camera_to_aircraft)  -- Points toward aircraft
+    local camera_z = normalize(camera_to_aircraft)  -- Points toward aircraft (camera forward = -z)
 
-    -- Camera y-axis: Align with aircraft up vector, orthogonal to z-axis
-    -- First, project aircraft up vector onto plane perpendicular to camera_z
-    local dot_up_z = dot(aircraft_up_global_vec, camera_z)
-    local temp_y = {
-        x = aircraft_up_global_vec.x - dot_up_z * camera_z.x,
-        y = aircraft_up_global_vec.y - dot_up_z * camera_z.y,
-        z = aircraft_up_global_vec.z - dot_up_z * camera_z.z
-    }
-    local camera_y = normalize(temp_y)  -- Ensure y is orthogonal to z and aligned with aircraft up
+    -- Camera y-axis: Global up (0, 0, 1) in DCS global frame
+    local camera_y = {x = 0, y = 0, z = 1}
 
-    -- Camera x-axis: Right vector, computed as cross product of y and z
+    -- Camera x-axis: Right vector, perpendicular to y and z
     local camera_x = normalize(cross(camera_y, camera_z))
 
-    -- Ensure orthonormality by recomputing y as cross of z and x
+    -- Ensure orthonormality by recomputing y (though typically unnecessary with global up)
     camera_y = normalize(cross(camera_z, camera_x))
 
     local camera_basis = {x = camera_x, y = camera_y, z = camera_z}
@@ -190,7 +176,6 @@ function setWeldedWingCamera(identifier, offset_local)
         z = camera_pos.z - aircraft_pos.z
     }
     local mag = magnitude(aircraft_to_camera)
-    local dot_product = dot(camera_y, aircraft_up_global_vec)
 
     if enableLogging then
         logToTrackLog("INFO", "CameraModes: setWeldedWingCamera: Camera Position: x=" .. camera_pos.x .. 
@@ -200,14 +185,11 @@ function setWeldedWingCamera(identifier, offset_local)
                       "), z=(" .. camera_basis.z.x .. "," .. camera_basis.z.y .. "," .. camera_basis.z.z .. ")")
         logToTrackLog("INFO", "CameraModes: setWeldedWingCamera: Aircraft-to-Camera Vector: (" .. aircraft_to_camera.x .. "," .. aircraft_to_camera.y .. "," .. aircraft_to_camera.z .. ")")
         logToTrackLog("INFO", "CameraModes: setWeldedWingCamera: Magnitude of Aircraft-to-Camera Vector: " .. mag)
-        logToTrackLog("INFO", "CameraModes: setWeldedWingCamera: Camera Up Vector: (" .. camera_basis.y.x .. "," .. camera_basis.y.y .. "," .. camera_basis.y.z .. ")")
-        logToTrackLog("INFO", "CameraModes: setWeldedWingCamera: Aircraft Up Vector: (" .. aircraft_up_global_vec.x .. "," .. aircraft_up_global_vec.y .. "," .. aircraft_up_global_vec.z .. ")")
-        logToTrackLog("INFO", "CameraModes: setWeldedWingCamera: Dot Product (Camera Up · Aircraft Up): " .. dot_product)
     end
 
     return {p = camera_pos, x = camera_basis.x, y = camera_basis.y, z = camera_basis.z}
 end
 
 if enableLogging then
-    logToTrackLog("INFO", "CameraModes.lua (v1.18) loaded successfully with corrected camera orientation.")
+    logToTrackLog("INFO", "CameraModes.lua (v1.19) loaded successfully with stable global-up orientation.")
 end
