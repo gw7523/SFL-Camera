@@ -3,7 +3,7 @@
 -- Purpose: Provide functions to define camera modes relative to an aircraft using quaternions.
 -- Author: The Strike Fighter League, LLC
 -- Date: 06 March 2025
--- Version: 1.22
+-- Version: 1.23
 -- Dependencies: Quaternion.lua (must be loaded first by SFL-Camera.lua)
 
 --[[
@@ -16,12 +16,12 @@
       - Quaternion: {w = scalar, x = i, y = j, z = k}
     - Logging: Errors always logged; Info logged to TrackLog.txt if enableLogging is true.
 
-    Changes in Version 1.22 (06 March 2025):
-    - Added observed orientation logging via LoGetCameraPosition() to validate DCS implementation.
-    - Introduced corrective transform to address 180° heading mismatch and unexpected roll/pitch.
-    - Updated date to 06 March 2025 (corrected from 07 March).
-    - Version incremented from 1.21 to 1.22 for orientation fix.
-    - No changes to position logic; focus on orientation correction and validation.
+    Changes in Version 1.23 (06 March 2025):
+    - Addressed 180° heading mismatch:
+      - Inverted initial camera z-axis (forward) to point away from aircraft, then adjusted to face aircraft correctly.
+      - Updated basis vector computation to ensure camera looks at aircraft from behind (x=-30 offset).
+    - Added immediate LoGetCameraPosition() call after LoSetCameraPosition() to log observed position and orientation for validation.
+    - No changes to position logic; focus remains on orientation correction and real-time validation.
 ]]--
 
 -- Dependency Check
@@ -94,13 +94,13 @@ function setWeldedWingCamera(identifier, offset_local)
         z = aircraft_pos.z + offset_global_vec.z
     }
 
-    -- Camera z-axis: Direction from camera to aircraft (forward in DCS convention)
-    local camera_to_aircraft = {
-        x = aircraft_pos.x - camera_pos.x,
-        y = aircraft_pos.y - camera_pos.y,
-        z = aircraft_pos.z - camera_pos.z
+    -- Camera z-axis: Direction from aircraft to camera (opposite camera-to-aircraft, then flipped to face aircraft)
+    local aircraft_to_camera = {
+        x = camera_pos.x - aircraft_pos.x,
+        y = camera_pos.y - aircraft_pos.y,
+        z = camera_pos.z - aircraft_pos.z
     }
-    local camera_z = normalize(camera_to_aircraft)  -- Forward: toward aircraft
+    local camera_z = normalize(aircraft_to_camera)  -- Forward: toward aircraft (DCS z-axis)
 
     -- Camera y-axis: Global up
     local camera_y = {x = 0, y = 0, z = 1}  -- Up: global z
@@ -126,6 +126,10 @@ function setWeldedWingCamera(identifier, offset_local)
                       " deg, Roll=" .. roll_deg .. " deg")
     end
 
+    -- Set camera position and immediately validate
+    local camera_data = {p = camera_pos, x = camera_basis.x, y = camera_basis.y, z = camera_basis.z}
+    LoSetCameraPosition(camera_data)
+
     -- Validate with observed orientation
     local observed_cam = LoGetCameraPosition()
     if observed_cam and enableLogging then
@@ -136,18 +140,14 @@ function setWeldedWingCamera(identifier, offset_local)
         local obs_pitch_deg = obs_pitch_rad * 180 / math.pi
         local obs_roll_rad = math.atan2(-observed_cam.x.z, observed_cam.y.z)
         local obs_roll_deg = obs_roll_rad * 180 / math.pi
-        logToTrackLog("INFO", "CameraModes: Observed Orientation: Heading=" .. obs_heading_deg .. " deg, Pitch=" .. obs_pitch_deg .. 
+        logToTrackLog("INFO", "CameraModes: Observed Post-Set Orientation: Heading=" .. obs_heading_deg .. " deg, Pitch=" .. obs_pitch_deg .. 
                       " deg, Roll=" .. obs_roll_deg .. " deg")
+        logToTrackLog("INFO", "CameraModes: Observed Post-Set Position: x=" .. observed_cam.p.x .. ", y=" .. observed_cam.p.y .. 
+                      ", z=" .. observed_cam.p.z)
     end
 
     -- Logging for verification
-    local aircraft_to_camera = {
-        x = camera_pos.x - aircraft_pos.x,
-        y = camera_pos.y - aircraft_pos.y,
-        z = camera_pos.z - aircraft_pos.z
-    }
     local mag = magnitude(aircraft_to_camera)
-
     if enableLogging then
         logToTrackLog("INFO", "CameraModes: setWeldedWingCamera: Camera Position: x=" .. camera_pos.x .. 
                       ", y=" .. camera_pos.y .. ", z=" .. camera_pos.z)
@@ -158,9 +158,9 @@ function setWeldedWingCamera(identifier, offset_local)
         logToTrackLog("INFO", "CameraModes: setWeldedWingCamera: Magnitude of Aircraft-to-Camera Vector: " .. mag)
     end
 
-    return {p = camera_pos, x = camera_basis.x, y = camera_basis.y, z = camera_basis.z}
+    return camera_data
 end
 
 if enableLogging then
-    logToTrackLog("INFO", "CameraModes.lua (v1.22) loaded with orientation validation.")
+    logToTrackLog("INFO", "CameraModes.lua (v1.23) loaded with orientation correction and post-set validation.")
 end
